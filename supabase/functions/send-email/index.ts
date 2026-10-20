@@ -2,13 +2,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
 interface EmailRequest {
-  type: 'invitation' | 'welcome' | 'order_invoice' | 'order_status' | 'password_reset' | 'quote_pending' | 'quote_responded' | 'quote_approved'
+  type: 'invitation' | 'welcome' | 'order_invoice' | 'order_status' | 'password_reset' | 'quote_pending' | 'quote_responded' | 'quote_approved' | 'contact_submitted' | 'contact_replied' | 'contact_resolved'
   to: string
   subject?: string
   data?: Record<string, unknown>
   userId?: string
   orderId?: string
   quoteId?: string
+  messageId?: string
 }
 
 interface UserProfile {
@@ -45,10 +46,12 @@ Deno.serve(async (req) => {
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
         global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
+          headers: { 
+            Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` 
+          },
         },
       }
     )
@@ -66,6 +69,7 @@ Deno.serve(async (req) => {
     const success = await sendEmail(to, emailContent.subject, emailContent.html)
 
     // Log the email
+    const logStatus = success ? 'sent' : 'failed'
     await supabaseClient
       .from('email_logs')
       .insert({
@@ -74,15 +78,27 @@ Deno.serve(async (req) => {
         subject: emailContent.subject,
         user_id: userId,
         order_id: orderId,
-        status: success ? 'sent' : 'failed',
+        status: logStatus,
         sent_at: new Date().toISOString()
       })
 
+    if (!success) {
+      const errorMessage = 'send-email function: email send failed (Resend request failed). Ensure RESEND_API_KEY is configured and the recipient email is valid.'
+      console.error(errorMessage)
+      return new Response(
+        JSON.stringify({ success: false, error: errorMessage }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500
+        }
+      )
+    }
+
     return new Response(
-      JSON.stringify({ success }),
+      JSON.stringify({ success: true }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: success ? 200 : 500
+        status: 200
       }
     )
   } catch (error) {
@@ -126,6 +142,15 @@ async function generateEmailContent(
     case 'quote_approved':
       return await generateQuoteApprovedEmail(supabaseClient, data?.quoteId)
 
+    case 'contact_submitted':
+      return generateContactSubmittedEmail(data)
+
+    case 'contact_replied':
+      return generateContactRepliedEmail(data)
+
+    case 'contact_resolved':
+      return generateContactResolvedEmail(data)
+
     case 'password_reset':
       return generatePasswordResetEmail(data)
 
@@ -145,7 +170,7 @@ function generateInvitationEmail(data: { email: string; invitation_url: string }
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>You're invited to join Nyalix Global Care</title>
+        <title>You're invited to join Nyalix Medical PVT LTD</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
           .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
@@ -158,7 +183,7 @@ function generateInvitationEmail(data: { email: string; invitation_url: string }
       <body>
         <div class="container">
           <div class="header">
-            <h1>Nyalix Global Care</h1>
+            <h1>Nyalix Medical PVT LTD</h1>
             <p>Medical Equipment Excellence</p>
           </div>
           <div class="content">
@@ -633,8 +658,8 @@ async function generateOrderInvoiceEmail(supabaseClient: ReturnType<typeof creat
           <div class="footer">
             <div class="footer-content">
               <h3>Need Help?</h3>
-              <p><a href="mailto:info@nyalix.com">info@nyalix.com</a></p>
-              <p><a href="tel:+1234567890">+1 (234) 567-8900</a></p>
+              <p><a href="mailto: info@nyalix.com"> info@nyalix.com</a></p>
+              <p><a href="tel:+917339700569">+917339700569</a></p>
               <p>24/7 Customer Support Available</p>
               <p>&copy; 2026 Nyalix Medical PVT LTD. All rights reserved.</p>
             </div>
@@ -807,7 +832,7 @@ async function generateQuotePendingEmail(supabaseClient: ReturnType<typeof creat
             </div>
 
             <p>Our sales team will respond to your request within 24-48 hours with pricing and availability information.</p>
-            <p>If you have any urgent questions, please contact us at info@nyalix.com or call +1 (234) 567-8900.</p>
+            <p>If you have any urgent questions, please contact us at info@nyalix.com or call +917339700569 / +249116648870.</p>
           </div>
           <div class="footer">
             <p>&copy; 2026 Nyalix Medical PVT LTD. All rights reserved.</p>
@@ -872,7 +897,7 @@ async function generateQuoteRespondedEmail(supabaseClient: ReturnType<typeof cre
             </div>
 
             <p>If this quotation meets your requirements, please let us know and we can proceed with the order.</p>
-            <p>For any questions or to discuss this further, please contact our sales team at info@nyalix.com or call +1 (234) 567-8900.</p>
+            <p>For any questions or to discuss this further, please contact our sales team at info@nyalix.com or call +917339700569 / +249116648870.</p>
           </div>
           <div class="footer">
             <p>&copy; 2026 Nyalix Medical PVT LTD. All rights reserved.</p>
@@ -1045,7 +1070,7 @@ async function generateQuoteApprovedEmail(supabaseClient: ReturnType<typeof crea
             <div class="footer-content">
               <h3>Need Help?</h3>
               <p><a href="mailto:info@nyalix.com">info@nyalix.com</a></p>
-              <p><a href="tel:+1234567890">+1 (234) 567-8900</a></p>
+              <p><a href="tel:+917339700569">+917339700569</a> / <a href="tel:+249116648870">+249116648870</a></p>
               <p>24/7 Customer Support Available</p>
               <p>&copy; 2026 Nyalix Medical PVT LTD. All rights reserved.</p>
             </div>
@@ -1057,10 +1082,174 @@ async function generateQuoteApprovedEmail(supabaseClient: ReturnType<typeof crea
   }
 }
 
+function generateContactSubmittedEmail(data: Record<string, unknown>): { subject: string; html: string } {
+  const name = (data?.name as string) || 'Valued Customer'
+
+  return {
+    subject: 'Message Received - Nyalix Medical PVT LTD',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Message Received</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+          .header { background: linear-gradient(135deg, #17455a, #2d6a8a); color: white; padding: 30px 20px; text-align: center; }
+          .content { padding: 30px 20px; color: #333; }
+          .message-info { background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #17455a; }
+          .footer { background-color: #f8f9fa; padding: 20px; text-align: center; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Nyalix Medical PVT LTD</h1>
+            <h2>Thank You for Contacting Us</h2>
+          </div>
+          <div class="content">
+            <h3>Dear ${name},</h3>
+            <p>We have received your message and appreciate you taking the time to contact Nyalix Medical PVT LTD.</p>
+            
+            <div class="message-info">
+              <p><strong>What happens next?</strong></p>
+              <p>Our team will review your message and respond as soon as possible, typically within 24-48 hours.</p>
+              <p>You can view your message status and our response in your profile dashboard.</p>
+            </div>
+
+            <p>If you need immediate assistance, please contact us directly:</p>
+            <ul>
+              <li>Email: <a href="mailto:info@nyalix.com">info@nyalix.com</a></li>
+              <li>India: <a href="tel:+917339700569">+917339700569</a></li>
+              <li>Sudan: <a href="tel:+249116648870">+249116648870</a></li>
+            </ul>
+
+            <p>Thank you for your patience!</p>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Nyalix Medical PVT LTD. All rights reserved.</p>
+            <p>This is an automated confirmation. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  }
+}
+
+function generateContactRepliedEmail(data: Record<string, unknown>): { subject: string; html: string } {
+  const reply = ((data?.reply || '') as string).substring(0, 200) || 'Thank you for reaching out.'
+
+  return {
+    subject: 'We\'ve Replied to Your Message - Nyalix Medical PVT LTD',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Admin Reply to Your Message</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+          .header { background: linear-gradient(135deg, #17455a, #2d6a8a); color: white; padding: 30px 20px; text-align: center; }
+          .content { padding: 30px 20px; color: #333; }
+          .reply-box { background-color: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #17455a; }
+          .button { display: inline-block; background: linear-gradient(135deg, #17455a, #2d6a8a); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .footer { background-color: #f8f9fa; padding: 20px; text-align: center; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Nyalix Medical PVT LTD</h1>
+            <h2>New Reply to Your Message</h2>
+          </div>
+          <div class="content">
+            <h3>We Have Replied!</h3>
+            <p>Our team has responded to your message. Here's a preview of their response:</p>
+            
+            <div class="reply-box">
+              <p>${reply}</p>
+            </div>
+
+            <p>To view the full reply and continue the conversation, please visit your profile dashboard:</p>
+            <a href="https://nyalix.com/profile" class="button">View Full Reply</a>
+
+            <p>If you have any follow-up questions, feel free to reply directly through your dashboard.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Nyalix Medical PVT LTD. All rights reserved.</p>
+            <p>This is an automated notification. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  }
+}
+
+function generateContactResolvedEmail(data: Record<string, unknown>): { subject: string; html: string } {
+  return {
+    subject: 'Your Message Has Been Resolved - Nyalix Medical PVT LTD',
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Message Resolved</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+          .header { background: linear-gradient(135deg, #17455a, #2d6a8a); color: white; padding: 30px 20px; text-align: center; }
+          .content { padding: 30px 20px; color: #333; }
+          .resolved-box { background-color: #e8f5e9; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #28a745; }
+          .footer { background-color: #f8f9fa; padding: 20px; text-align: center; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Nyalix Medical PVT LTD</h1>
+            <h2>Message Resolved</h2>
+          </div>
+          <div class="content">
+            <h3>Your Inquiry Has Been Resolved</h3>
+            
+            <div class="resolved-box">
+              <p><strong style="color: #28a745;">✓ Status: Resolved</strong></p>
+              <p>Thank you for contacting Nyalix Medical PVT LTD. Our team has successfully addressed your inquiry.</p>
+            </div>
+
+            <p>You can view the complete conversation history in your profile dashboard, where all messages and replies are maintained for your reference.</p>
+
+            <p>If you have any additional questions or concerns, please don't hesitate to contact us:</p>
+            <ul>
+              <li>Email: <a href="mailto:info@nyalix.com">info@nyalix.com</a></li>
+              <li>India: <a href="tel:+917339700569">+917339700569</a></li>
+              <li>Sudan: <a href="tel:+249116648870">+249116648870</a></li>
+            </ul>
+
+            <p>We appreciate your business and look forward to serving you again!</p>
+          </div>
+          <div class="footer">
+            <p>&copy; 2026 Nyalix Medical PVT LTD. All rights reserved.</p>
+            <p>This is an automated notification. Please do not reply to this email.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  }
+}
+
 async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
   const resendApiKey = Deno.env.get('RESEND_API_KEY')
   if (!resendApiKey) {
-    console.error('RESEND_API_KEY not set')
+    console.error('RESEND_API_KEY not set - cannot send email')
     return false
   }
 
@@ -1079,7 +1268,13 @@ async function sendEmail(to: string, subject: string, html: string): Promise<boo
       })
     })
 
-    return response.ok
+    if (!response.ok) {
+      const bodyText = await response.text()
+      console.error('Resend API error', response.status, bodyText)
+      return false
+    }
+
+    return true
   } catch (error) {
     console.error('Error sending email:', error)
     return false

@@ -1,6 +1,11 @@
 import React from 'react';
-import { type LucideIcon, BarChart3, Package, ShoppingBag, Award, ImageIcon, MessageSquare, Mail, Users, Settings, X, Tags, FileText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { type LucideIcon, BarChart3, Package, ShoppingBag, Award, ImageIcon, MessageSquare, Mail, Users, Settings, X, Tags, FileText, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 export type AdminTab = 'dashboard' | 'products' | 'categories' | 'orders' | 'certificates' | 'exhibitions' | 'messages' | 'quotes' | 'users' | 'newsletter' | 'settings';
@@ -8,7 +13,7 @@ export type AdminTab = 'dashboard' | 'products' | 'categories' | 'orders' | 'cer
 interface SidebarItem {
   key: AdminTab;
   icon: LucideIcon;
-  label: string;
+  label?: string;
   badge?: number;
 }
 
@@ -27,18 +32,53 @@ interface AdminSidebarProps {
 }
 
 const items: SidebarItem[] = [
-  { key: 'dashboard', icon: BarChart3, label: 'Admin Dashboard' },
-  { key: 'products', icon: Package, label: 'Products' },
-  { key: 'categories', icon: Tags, label: 'Categories' },
-  { key: 'orders', icon: ShoppingBag, label: 'Orders' },
-  { key: 'certificates', icon: Award, label: 'Certificates' },
-  { key: 'exhibitions', icon: ImageIcon, label: 'Exhibitions' },
-  { key: 'messages', icon: MessageSquare, label: 'Messages' },
-  { key: 'quotes', icon: FileText, label: 'Quotes' },
-  { key: 'newsletter', icon: Mail, label: 'Newsletter' },
-  { key: 'users', icon: Users, label: 'Users' },
-  { key: 'settings', icon: Settings, label: 'Settings' },
+  { key: 'dashboard', icon: BarChart3 },
+  { key: 'products', icon: Package },
+  { key: 'categories', icon: Tags },
+  { key: 'orders', icon: ShoppingBag },
+  { key: 'certificates', icon: Award },
+  { key: 'exhibitions', icon: ImageIcon },
+  { key: 'messages', icon: MessageSquare },
+  { key: 'quotes', icon: FileText },
+  { key: 'newsletter', icon: Mail },
+  { key: 'users', icon: Users },
+  { key: 'settings', icon: Settings },
 ];
+
+// Logout button component
+const LogoutButton: React.FC<{
+  isMobile?: boolean;
+  onClose?: () => void;
+}> = ({ isMobile = false, onClose }) => {
+  const { t } = useTranslation();
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    if (!confirm(t('admin.settings.logoutConfirm'))) return;
+    try {
+      await signOut();
+      toast.success('Logged out successfully');
+      navigate('/');
+      if (isMobile) onClose?.();
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast.error('Failed to logout');
+    }
+  };
+
+  return (
+    <motion.button
+      onClick={handleLogout}
+      whileHover={{ x: 4 }}
+      whileTap={{ scale: 0.98 }}
+      className="w-full px-3 md:px-4 py-2.5 md:py-3 rounded-lg md:rounded-xl bg-red-600/10 hover:bg-red-600/20 text-red-600 hover:text-red-700 transition-all duration-200 flex items-center justify-center gap-2 font-medium text-sm"
+    >
+      <LogOut className="w-4 h-4" />
+      {t('admin.settings.logout')}
+    </motion.button>
+  );
+};
 
 // Sidebar content component
 const SidebarContent: React.FC<{
@@ -61,7 +101,7 @@ const SidebarContent: React.FC<{
     )}
 
     {/* Navigation Items */}
-    <nav className="flex-1 px-3 md:px-4 py-4 md:py-6 space-y-1 md:space-y-2 overflow-y-auto">
+    <nav className="flex-1 px-3 md:px-4 py-4 md:py-6 space-y-1 md:space-y-2 overflow-y-auto flex flex-col">
       {sidebarItems.map((item) => {
         const Icon = item.icon;
         const isActive = activeTab === item.key;
@@ -132,11 +172,12 @@ const SidebarContent: React.FC<{
       })}
     </nav>
 
-    {/* Footer info */}
-    <div className="px-4 py-4 border-t border-border">
+    {/* Footer info and logout */}
+    <div className="px-4 py-4 border-t border-border space-y-3">
       <p className="text-xs text-muted-foreground text-center">
         Admin Dashboard v1.0
       </p>
+      <LogoutButton isMobile={isMobile} onClose={onClose} />
     </div>
   </>
 );
@@ -148,8 +189,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   isOpen = true,
   onClose,
 }) => {
+  const { t } = useTranslation();
+  const { isRTL } = useLanguage();
+
   const sidebarItems = items.map((item) => ({
     ...item,
+    label: t(`admin.sidebar.${item.key}`),
     badge:
       item.key === 'orders'
         ? notifications.orders
@@ -174,13 +219,18 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-30 bg-black/50 lg:hidden\"
+            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
           />
         )}
       </AnimatePresence>
 
       {/* Sidebar Desktop (Always Visible) */}
-      <aside className="hidden lg:fixed lg:left-0 lg:top-16 lg:z-30 lg:h-[calc(100vh-64px)] lg:w-64 lg:bg-gradient-to-b lg:from-card lg:to-card/95 lg:border-r lg:border-border lg:shadow-luxury lg:pt-16 lg:overflow-y-auto lg:flex lg:flex-col">
+      <aside
+        className={cn(
+          'hidden lg:fixed lg:top-16 lg:z-30 lg:h-[calc(100vh-64px)] lg:w-64 lg:bg-gradient-to-b lg:from-card lg:to-card/95 lg:border-border lg:shadow-luxury lg:pt-16 lg:overflow-y-auto lg:flex lg:flex-col',
+          isRTL ? 'lg:right-0 lg:left-auto lg:border-l lg:border-r-0' : 'lg:left-0 lg:right-auto lg:border-r lg:border-l-0'
+        )}
+      >
         <SidebarContent 
           sidebarItems={sidebarItems}
           activeTab={activeTab}
@@ -193,10 +243,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       <motion.aside
         initial={false}
         animate={{
-          x: isOpen ? 0 : -280,
+          x: isOpen ? 0 : isRTL ? 280 : -280,
         }}
         transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className="fixed left-0 top-14 md:top-16 z-40 h-[calc(100vh-56px)] md:h-[calc(100vh-64px)] w-64 bg-gradient-to-b from-card to-card/95 border-r border-border shadow-luxury pt-14 md:pt-16 overflow-y-auto flex flex-col lg:hidden"
+        className={cn(
+          'fixed top-14 md:top-16 z-40 h-[calc(100vh-56px)] md:h-[calc(100vh-64px)] w-64 bg-gradient-to-b from-card to-card/95 border-border shadow-luxury pt-14 md:pt-16 overflow-y-auto flex flex-col lg:hidden',
+          isRTL ? 'right-0 border-l' : 'left-0 border-r'
+        )}
       >
         <SidebarContent 
           sidebarItems={sidebarItems}

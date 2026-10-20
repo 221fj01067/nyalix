@@ -3,9 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { type LucideIcon, User, Package, Clock, CheckCircle, Truck, XCircle, ChevronDown, ChevronUp, X, Star, MessageSquare, FileText, Settings } from 'lucide-react';
+import { type LucideIcon, User, Package, Clock, CheckCircle, Truck, XCircle, ChevronDown, ChevronUp, X, Star, MessageSquare, FileText, Settings, Edit2, Phone, Globe, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import StarRating from '@/components/StarRating';
+import { useTranslation } from 'react-i18next';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface OrderItem {
   product_name: string;
@@ -91,6 +93,7 @@ const ReviewModal = ({
 
 
 }: {open: boolean;orderId: string;productId: string;productName: string;userId: string;existingReview?: Review;onClose: () => void;onSaved: () => void;}) => {
+  const { t } = useTranslation();
   const [rating, setRating] = useState(existingReview?.rating || 0);
   const [text, setText] = useState(existingReview?.review_text || '');
   const [saving, setSaving] = useState(false);
@@ -140,7 +143,7 @@ const ReviewModal = ({
         
         <div className="flex items-center justify-between mb-5">
           <h3 className="font-display font-bold text-foreground text-lg">
-            {existingReview ? 'Edit Your Review' : 'Write a Review'}
+            {existingReview ? t('user.profile.editYourReview') : t('user.profile.writeAReview')}
           </h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
             <X className="w-5 h-5" />
@@ -149,16 +152,16 @@ const ReviewModal = ({
         <p className="text-sm text-muted-foreground mb-4 truncate">{productName}</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-foreground mb-2 block">Your Rating</label>
+            <label className="text-sm font-medium text-foreground mb-2 block">{t('user.profile.yourRating')}</label>
             <StarRating value={rating} onChange={setRating} size="lg" />
           </div>
           <div>
-            <label className="text-sm font-medium text-foreground mb-1 block">Your Review <span className="text-muted-foreground font-normal">(optional)</span></label>
+            <label className="text-sm font-medium text-foreground mb-1 block">{t('user.profile.yourReviewLabel')} <span className="text-muted-foreground font-normal">({t('user.profile.optional')})</span></label>
             <textarea
               rows={4}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Share your experience with this product..."
+              placeholder={t('user.profile.reviewPlaceholder')}
               className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
             
           </div>
@@ -167,7 +170,7 @@ const ReviewModal = ({
             disabled={saving || rating === 0}
             className="w-full px-6 py-3 bg-gradient-gold rounded-lg font-semibold text-primary-foreground hover:opacity-90 transition-all shadow-gold disabled:opacity-50">
             
-            {saving ? 'Submitting...' : existingReview ? 'Update Review' : 'Submit Review'}
+            {saving ? t('user.profile.submitting') : existingReview ? t('user.profile.updateReview') : t('user.profile.submitReview')}
           </button>
         </form>
       </motion.div>
@@ -179,10 +182,17 @@ const ReviewModal = ({
 const Profile = () => {
   const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { isRTL } = useLanguage();
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [quotes, setQuotes] = useState<QuoteRequest[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [messageReplies, setMessageReplies] = useState<Record<string, any[]>>({});
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
+  const [editingMessage, setEditingMessage] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
   const [reviewModal, setReviewModal] = useState<{
     open: boolean;orderId: string;productId: string;productName: string;
   } | null>(null);
@@ -205,24 +215,69 @@ const Profile = () => {
     setReviews(data as unknown as Review[] ?? []);
   }, [user]);
   const fetchQuotes = useCallback(async () => {
-    if (!user) return;
-    const { data, error } = await supabase
-      .from('quote_requests')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+    if (!user || !user.id) return;
+    
+    try {
+      // Direct query with user_id filter (now that API schema is refreshed)
+      const { data, error } = await supabase
+        .from('quote_requests')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching quotes:', error);
+      if (error) {
+        console.error('Error fetching quotes:', error);
+        toast.error('Unable to load quotes');
+        return;
+      }
+
+      setQuotes(data as QuoteRequest[] ?? []);
+    } catch (err) {
+      console.error('Exception fetching quotes:', err);
       toast.error('Unable to load quotes');
-      return;
     }
+  }, [user]);
 
-    setQuotes(data as QuoteRequest[] ?? []);
+  const fetchMessages = useCallback(async () => {
+    if (!user || !user.id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('contact_messages')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching messages:', error);
+        return;
+      }
+
+      setMessages(data ?? []);
+
+      // Fetch replies for all messages
+      const { data: repliesData } = await supabase
+        .from('contact_message_replies')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (repliesData) {
+        const repliesByMessageId: Record<string, any[]> = {};
+        repliesData.forEach((reply: any) => {
+          if (!repliesByMessageId[reply.message_id]) {
+            repliesByMessageId[reply.message_id] = [];
+          }
+          repliesByMessageId[reply.message_id].push(reply);
+        });
+        setMessageReplies(repliesByMessageId);
+      }
+    } catch (err) {
+      console.error('Exception fetching messages:', err);
+    }
   }, [user]);
   useEffect(() => {
-    if (user) {fetchOrders();fetchReviews();fetchQuotes();}
-  }, [user, fetchOrders, fetchReviews, fetchQuotes]);
+    if (user) {fetchOrders();fetchReviews();fetchQuotes();fetchMessages();}
+  }, [user, fetchOrders, fetchReviews, fetchQuotes, fetchMessages]);
 
   const getExistingReview = (orderId: string, productId: string) =>
   reviews.find((r) => r.order_id === orderId && r.product_id === productId);
@@ -233,6 +288,50 @@ const Profile = () => {
     if (error) {toast.error(error.message);return;}
     toast.success('Order cancelled successfully');
     fetchOrders();
+  };
+
+  const handleEditMessage = async (messageId: string, newText: string) => {
+    if (!newText.trim()) {
+      toast.error(t('user.profile.messageSaveFailed'));
+      return;
+    }
+
+    const { error } = await supabase
+      .from('contact_messages')
+      .update({
+        message: newText,
+        is_edited: true,
+        edited_at: new Date().toISOString(),
+        edit_count: (messages.find((m) => m.id === messageId)?.edit_count || 0) + 1,
+      })
+      .eq('id', messageId);
+
+    if (error) {
+      toast.error(t('user.profile.messageSaveFailed'));
+      return;
+    }
+
+    toast.success(t('user.profile.messageSaveSuccess'));
+    setEditingMessage(null);
+    setEditingText('');
+    fetchMessages();
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!confirm(t('user.profile.deleteConfirm'))) return;
+
+    const { error } = await supabase
+      .from('contact_messages')
+      .delete()
+      .eq('id', messageId);
+
+    if (error) {
+      toast.error(t('user.profile.messageDeleteFailed'));
+      return;
+    }
+
+    toast.success(t('user.profile.messageDeleteSuccess'));
+    fetchMessages();
   };
 
   if (loading || !user) return null;
@@ -257,7 +356,7 @@ const Profile = () => {
 
       <div className="bg-gradient-navy py-12">
         <div className="container mx-auto px-4">
-          <h1 className="text-2xl md:text-3xl font-display font-bold text-primary-foreground">My Account</h1>
+          <h1 className="text-2xl md:text-3xl font-display font-bold text-primary-foreground">{t('user.profile.title')}</h1>
         </div>
       </div>
 
@@ -271,23 +370,23 @@ const Profile = () => {
                 <User className="w-8 h-8 text-gray-50" />
               </div>
               <div>
-                <h2 className="text-xl font-display font-bold text-foreground">{profile?.full_name || 'User'}</h2>
+                <h2 className="text-xl font-display font-bold text-foreground">{profile?.full_name || t('user.profile.user')}</h2>
                 <p className="text-sm text-muted-foreground">{profile?.email || user?.email || 'No email'}</p>
                 {profile?.phone && <p className="text-sm text-muted-foreground">📞 {profile.phone}</p>}
                 {profile?.country && <p className="text-sm text-muted-foreground">🌍 {profile.country}</p>}
               </div>
             </div>
             <Link to="/settings" className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
-                <Settings className="w-4 h-4" /> Settings
+                <Settings className="w-4 h-4" /> {t('user.profile.settings')}
               </Link>
           </div>
 
           {/* Profile Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
             {[
-              { label: 'Email', value: profile?.email || user?.email || '—' },
-              { label: 'Phone', value: profile?.phone || '—' },
-              { label: 'Total Orders', value: orders.length }
+              { label: t('user.profile.email'), value: profile?.email || user?.email || '—' },
+              { label: t('user.profile.phone'), value: profile?.phone || '—' },
+              { label: t('user.profile.totalOrders'), value: orders.length }
             ].map((item, i) =>
               <div key={i} className="bg-muted rounded-lg p-3">
                 <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -299,11 +398,11 @@ const Profile = () => {
 
         {/* Orders */}
         <div>
-          <h2 className="text-lg font-display font-semibold text-foreground mb-4">My Orders</h2>
+          <h2 className="text-lg font-display font-semibold text-foreground mb-4">{t('user.profile.myOrders')}</h2>
           {orders.length === 0 ?
           <div className="bg-card rounded-xl border border-border p-8 text-center shadow-luxury">
               <Package className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">You haven't placed any orders yet.</p>
+              <p className="text-muted-foreground">{t('user.profile.noOrders')}</p>
             </div> :
 
           <div className="space-y-4">
@@ -350,7 +449,7 @@ const Profile = () => {
                   <div className="border-t border-border p-5 bg-muted/30">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                           <div>
-                            <p className="text-xs text-muted-foreground mb-1">Shipping To</p>
+                            <p className="text-xs text-muted-foreground mb-1">{t('user.profile.shippingTo')}</p>
                             <p className="text-sm text-foreground">{order.shipping_name}</p>
                             {order.shipping_email && <p className="text-sm text-muted-foreground">{order.shipping_email}</p>}
                             <p className="text-sm text-muted-foreground">{order.shipping_city}, {order.shipping_country}</p>
@@ -359,7 +458,7 @@ const Profile = () => {
                           </div>
                           {/* Status Timeline */}
                           <div>
-                            <p className="text-xs text-muted-foreground mb-2">Order Progress</p>
+                            <p className="text-xs text-muted-foreground mb-2">{t('user.profile.orderProgress')}</p>
                             <div className="flex items-center gap-1">
                               {['pending', 'processing', 'shipped', 'delivered'].map((step, si) => {
                             const steps = ['pending', 'processing', 'shipped', 'delivered'];
@@ -374,7 +473,7 @@ const Profile = () => {
                           })}
                             </div>
                             <div className="flex justify-between mt-1">
-                              {['Pending', 'Processing', 'Shipped', 'Delivered'].map((s) =>
+                              {[t('user.profile.statusPending'), t('user.profile.statusProcessing'), t('user.profile.statusShipped'), t('user.profile.statusDelivered')].map((s) =>
                           <span key={s} className="text-[10px] text-muted-foreground">{s}</span>
                           )}
                             </div>
@@ -384,7 +483,7 @@ const Profile = () => {
                         {/* Order items with images */}
                         {order.order_items && order.order_items.length > 0 &&
                     <div className="mb-4">
-                            <p className="text-xs text-muted-foreground mb-3">Items</p>
+                            <p className="text-xs text-muted-foreground mb-3">{t('user.profile.items')}</p>
                             <div className="space-y-3">
                               {order.order_items.map((item, idx) => {
                           const existing = item.product_id ? getExistingReview(order.id, item.product_id) : undefined;
@@ -407,7 +506,7 @@ const Profile = () => {
                                       {existing &&
                                 <div className="flex items-center gap-1 mt-0.5">
                                           <StarRating value={existing.rating} readonly size="sm" />
-                                          <span className="text-xs text-muted-foreground">Your review</span>
+                                          <span className="text-xs text-muted-foreground">{t('user.profile.yourReview')}</span>
                                         </div>
                                 }
                                     </div>
@@ -421,7 +520,7 @@ const Profile = () => {
                                 }>
                                 
                                         <Star className="w-3.5 h-3.5" />
-                                        {existing ? 'Edit Review' : 'Write Review'}
+                                        {existing ? t('user.profile.editReview') : t('user.profile.writeReview')}
                                       </button>
                               }
                                   </div>);
@@ -435,11 +534,11 @@ const Profile = () => {
                         {canCancel &&
                     <button onClick={() => handleCancelOrder(order.id)}
                     className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors">
-                            <XCircle className="w-4 h-4" /> Cancel Order
+                            <XCircle className="w-4 h-4" /> {t('user.profile.cancelOrder')}
                           </button>
                     }
                         {order.status === 'cancelled' &&
-                    <p className="text-sm text-red-500 font-medium">This order has been cancelled.</p>
+                    <p className="text-sm text-red-500 font-medium">{t('user.profile.orderCancelled')}</p>
                     }
                       </div>
                   }
@@ -452,11 +551,11 @@ const Profile = () => {
 
         {/* Quote Requests */}
         <div>
-          <h2 className="text-lg font-display font-semibold text-foreground mb-4">My Quote Requests</h2>
+          <h2 className="text-lg font-display font-semibold text-foreground mb-4">{t('user.profile.myQuoteRequests')}</h2>
           {quotes.length === 0 ?
           <div className="bg-card rounded-xl border border-border p-8 text-center shadow-luxury">
               <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">You haven't submitted any quote requests yet.</p>
+              <p className="text-muted-foreground">{t('user.profile.noQuoteRequests')}</p>
             </div> :
 
           <div className="space-y-4">
@@ -489,7 +588,7 @@ const Profile = () => {
                         <div className="bg-muted/50 rounded-lg border border-border p-4 mb-4">
                           <div className="flex items-center gap-2 mb-2">
                             <MessageSquare className="w-4 h-4 text-primary" />
-                            <span className="text-sm font-medium text-foreground">Admin Response</span>
+                            <span className="text-sm font-medium text-foreground">{t('user.profile.adminResponse')}</span>
                             {quote.admin_responded_at && (
                               <span className="text-xs text-muted-foreground">
                                 {new Date(quote.admin_responded_at).toLocaleDateString()}
@@ -504,36 +603,36 @@ const Profile = () => {
                       {quote.status === 'Approved' && quote.total_amount && (
                         <div className="bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 p-4 mb-4">
                           <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Quote Approved</h4>
+                            <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">{t('user.profile.quoteApproved')}</h4>
                             <button
                               onClick={() => window.open(`/invoice/${quote.id}`, '_blank')}
                               className="px-3 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors"
                             >
-                              Download Invoice
+                              {t('user.profile.downloadInvoice')}
                             </button>
                           </div>
                           {quote.unit_price ? (
                             <div className="grid grid-cols-2 gap-4 text-sm">
                               <div>
-                                <p className="text-green-700 dark:text-green-300">Unit Price</p>
+                                <p className="text-green-700 dark:text-green-300">{t('user.profile.unitPrice')}</p>
                                 <p className="font-semibold text-green-800 dark:text-green-200">${quote.unit_price.toFixed(2)}</p>
                               </div>
                               <div>
-                                <p className="text-green-700 dark:text-green-300">Quantity</p>
+                                <p className="text-green-700 dark:text-green-300">{t('user.profile.quantity')}</p>
                                 <p className="font-semibold text-green-800 dark:text-green-200">{quote.quantity}</p>
                               </div>
                               <div>
-                                <p className="text-green-700 dark:text-green-300">Tax ({((quote.tax_rate || 0) * 100).toFixed(1)}%)</p>
+                                <p className="text-green-700 dark:text-green-300">{t('user.profile.tax')} ({((quote.tax_rate || 0) * 100).toFixed(1)}%)</p>
                                 <p className="font-semibold text-green-800 dark:text-green-200">${(quote.tax_amount || 0).toFixed(2)}</p>
                               </div>
                               <div>
-                                <p className="text-green-700 dark:text-green-300">Total</p>
+                                <p className="text-green-700 dark:text-green-300">{t('user.profile.total')}</p>
                                 <p className="font-semibold text-green-800 dark:text-green-200">${quote.total_amount.toFixed(2)}</p>
                               </div>
                             </div>
                           ) : (
                             <p className="text-sm text-green-700 dark:text-green-300">
-                              Your quote has been approved. Contact us for pricing details.
+                              {t('user.profile.quoteApprovedMessage')}
                             </p>
                           )}
                         </div>
@@ -542,19 +641,19 @@ const Profile = () => {
                       {/* Quote Details */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                         <div>
-                          <p className="text-muted-foreground">Company</p>
+                          <p className="text-muted-foreground">{t('user.profile.company')}</p>
                           <p className="font-medium text-foreground">{quote.company}</p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Contact</p>
+                          <p className="text-muted-foreground">{t('user.profile.contact')}</p>
                           <p className="font-medium text-foreground">{quote.phone}</p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Country</p>
+                          <p className="text-muted-foreground">{t('user.profile.country')}</p>
                           <p className="font-medium text-foreground">{quote.country}</p>
                         </div>
                         <div>
-                          <p className="text-muted-foreground">Status</p>
+                          <p className="text-muted-foreground">{t('user.profile.status')}</p>
                           <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${config.bg} ${config.color} border`}>
                             <StatusIcon className="w-3 h-3" />
                             {quote.status}
@@ -564,7 +663,7 @@ const Profile = () => {
 
                       {quote.message && (
                         <div className="mt-4 pt-4 border-t border-border">
-                          <p className="text-sm text-muted-foreground mb-2">Your Message</p>
+                          <p className="text-sm text-muted-foreground mb-2">{t('user.profile.yourMessage')}</p>
                           <p className="text-sm text-foreground leading-relaxed">{quote.message}</p>
                         </div>
                       )}
@@ -575,9 +674,206 @@ const Profile = () => {
             </div>
           }
         </div>
-      </div>
-    </div>);
 
+        {/* Messages */}
+        <div>
+          <h2 className="text-lg font-display font-semibold text-foreground mb-4">{t('user.profile.myMessages')}</h2>
+          {messages.length === 0 ? (
+            <div className="bg-card rounded-xl border border-border p-8 text-center shadow-luxury">
+              <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">{t('user.profile.noMessages')}</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((message, i) => {
+                const isExpanded = expandedMessage === message.id;
+                const replies = messageReplies[message.id] || [];
+                const statusColors: Record<string, { bg: string; color: string; icon: React.ComponentType<any> }> = {
+                  new: { bg: 'bg-yellow-100', color: 'text-yellow-700', icon: Clock },
+                  replied: { bg: 'bg-blue-100', color: 'text-blue-700', icon: MessageSquare },
+                  resolved: { bg: 'bg-green-100', color: 'text-green-700', icon: CheckCircle },
+                };
+                const statusConfig = statusColors[message.status] || statusColors.new;
+                const StatusIcon = statusConfig.icon;
+
+                return (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="bg-card rounded-xl border border-border shadow-luxury overflow-hidden"
+                  >
+                    {/* Message Header */}
+                    <button
+                      onClick={() => setExpandedMessage(isExpanded ? null : message.id)}
+                      className="w-full flex items-center justify-between p-5 text-left hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.color}`}
+                          >
+                            <StatusIcon className="w-3 h-3" />
+                            {message.status === 'new' && t('user.profile.pending')}
+                            {message.status === 'replied' && t('user.profile.processing')}
+                            {message.status === 'resolved' && t('user.profile.delivered')}
+                          </span>
+                          {message.is_edited && (
+                            <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded flex items-center gap-1">
+                              <Edit2 className="w-3 h-3" />
+                              {t('user.profile.edited')}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-foreground font-medium mb-1">
+                          {message.message.substring(0, 100)}
+                          {message.message.length > 100 ? '...' : ''}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(message.created_at).toLocaleDateString()} at{' '}
+                          {new Date(message.created_at).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        {replies.length > 0 && (
+                          <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
+                            {replies.length} {replies.length === 1 ? t('user.profile.reply') : t('user.profile.replies')}
+                          </span>
+                        )}
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </button>
+
+                    {/* Message Details (Expanded) */}
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="border-t border-border bg-muted/30 p-5 space-y-4"
+                        >
+                          {/* Message Content */}
+                          {editingMessage === message.id ? (
+                            <div className="space-y-3">
+                              <textarea
+                                value={editingText}
+                                onChange={(e) => setEditingText(e.target.value)}
+                                rows={4}
+                                maxLength={1000}
+                                className="w-full px-4 py-3 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleEditMessage(message.id, editingText)}
+                                  className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+                                >
+                                  {t('user.profile.saveChanges')}
+                                </button>
+                                <button
+                                  onClick={() => setEditingMessage(null)}
+                                  className="px-4 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-border transition-colors"
+                                >
+                                  {t('user.profile.cancel')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <h4 className="text-sm font-semibold text-foreground mb-2">{t('user.profile.messageLabel')}</h4>
+                              <p className="text-sm text-foreground whitespace-pre-wrap">{message.message}</p>
+                              {message.is_edited && (
+                                <p className="text-xs text-muted-foreground mt-2">
+                                  ✏️ {t('user.profile.lastEdited')}: {message.edited_at ? new Date(message.edited_at).toLocaleDateString() : 'N/A'}
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Contact Details */}
+                          {(message.shipping_phone || message.shipping_country) && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-card rounded-lg border border-border">
+                              {message.shipping_phone && (
+                                <div className="flex items-center gap-2">
+                                  <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
+                                  <span className="text-sm text-foreground">{message.shipping_phone}</span>
+                                </div>
+                              )}
+                              {message.shipping_country && (
+                                <div className="flex items-center gap-2">
+                                  <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
+                                  <span className="text-sm text-foreground">{message.shipping_country}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Replies Section */}
+                          {replies.length > 0 && (
+                            <div className="pt-2 border-t border-border">
+                              <h4 className="text-sm font-semibold text-foreground mb-3">{t('user.profile.adminResponses')}</h4>
+                              <div className="space-y-3 bg-card rounded-lg p-3 border border-border">
+                                {replies.map((reply) => (
+                                  <div key={reply.id} className="border-l-2 border-accent pl-3">
+                                    <p className="text-xs font-medium text-muted-foreground mb-1">{t('user.profile.adminReplyLabel')}</p>
+                                    <p className="text-sm text-foreground whitespace-pre-wrap mb-1">
+                                      {reply.reply_text}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(reply.created_at).toLocaleDateString()} at{' '}
+                                      {new Date(reply.created_at).toLocaleTimeString([], {
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Action Buttons */}
+                          {!editingMessage || editingMessage !== message.id ? (
+                            <div className="flex gap-2 pt-2 border-t border-border">
+                              {message.status === 'new' && (
+                                <button
+                                  onClick={() => {
+                                    setEditingMessage(message.id);
+                                    setEditingText(message.message);
+                                  }}
+                                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+                                >
+                                  <Edit2 className="w-4 h-4" /> {t('user.profile.editMessage')}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteMessage(message.id)}
+                                className="px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : null}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default Profile;

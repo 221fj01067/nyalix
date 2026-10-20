@@ -11,11 +11,11 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   userRole: UserRole;
-  profile: { full_name: string; email: string; phone: string; country: string } | null;
+  profile: { full_name: string; email: string; phone: string; country: string; language: string } | null;
   signUp: (email: string, password: string, fullName: string, phone: string, country: string) => Promise<{ error: AuthError | null }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
-  updateProfile: (data: Partial<{ full_name: string; email: string; phone: string; country: string }>) => Promise<{ error: Error | null }>;
+  updateProfile: (data: Partial<{ full_name: string; email: string; phone: string; country: string; language: string }>) => Promise<{ error: Error | null }>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -37,7 +37,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase.from('profiles').select('full_name, email, phone, country').eq('user_id', userId).maybeSingle();
+    const { data } = await supabase.from('profiles').select('full_name, email, phone, country, language').eq('user_id', userId).maybeSingle();
+    if (data?.language && (data.language === 'en' || data.language === 'ar')) {
+      // Set language in localStorage so LanguageProvider picks it up
+      localStorage.setItem('nyalix_language', data.language);
+      // Dispatch custom event to notify LanguageProvider
+      window.dispatchEvent(new CustomEvent('languageChange', { detail: data.language }));
+    }
     setProfile(data);
   };
 
@@ -78,6 +84,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string, phone: string, country: string) => {
+    // Check if email already exists in profiles table
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('email')
+      .ilike('email', email)
+      .maybeSingle();
+
+    if (existingProfile) {
+      return { error: new Error('Email already registered. Please use a different email or try logging in.') as AuthError };
+    }
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -99,7 +116,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error };
   };
 
-  const updateProfile = async (data: Partial<{ full_name: string; email: string; phone: string; country: string }>) => {
+  const updateProfile = async (data: Partial<{ full_name: string; email: string; phone: string; country: string; language: string }>) => {
     if (!user) return { error: new Error('No user logged in') };
     
     try {

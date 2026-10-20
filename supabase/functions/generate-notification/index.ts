@@ -147,7 +147,8 @@ async function generateNotifications(
 
     // WhatsApp message
     const whatsappMessage = generateInvoiceWhatsApp(profile, order)
-    if (profile.phone) {
+    const twilioConfigured = !!(Deno.env.get('TWILIO_ACCOUNT_SID') && Deno.env.get('TWILIO_AUTH_TOKEN') && Deno.env.get('TWILIO_WHATSAPP_NUMBER'))
+    if (profile.phone && twilioConfigured) {
       notifications.push({
         type: 'whatsapp',
         event: 'order_placed',
@@ -190,7 +191,8 @@ async function generateNotifications(
 
     // WhatsApp message
     const whatsappMessage = generateStatusUpdateWhatsApp(profile, order)
-    if (profile.phone) {
+    const twilioConfigured = !!(Deno.env.get('TWILIO_ACCOUNT_SID') && Deno.env.get('TWILIO_AUTH_TOKEN') && Deno.env.get('TWILIO_WHATSAPP_NUMBER'))
+    if (profile.phone && twilioConfigured) {
       notifications.push({
         type: 'whatsapp',
         event: 'order_status_update',
@@ -219,7 +221,7 @@ function generateWelcomeEmail(profile: ProfileRecord): string {
     </head>
     <body>
       <div class="header">
-        <h1 style="color: #17455a; margin: 0;">Nyalix Global Care</h1>
+        <h1 style="color: #17455a; margin: 0;">Nyalix Medical PVT LTD</h1>
         <h2 style="color: #666; margin: 5px 0 0 0; font-size: 16px;">Welcome to Our Platform!</h2>
       </div>
       <div class="content">
@@ -365,7 +367,7 @@ function generateInvoiceWhatsApp(profile: ProfileRecord, order: OrderRecord): st
     `${item.product_name} x${item.quantity} - $${(item.quantity * item.price).toFixed(2)}`
   ).join('\n') ?? ''
 
-  return `🛍️ *Order Confirmation*\n\nOrder ID: ${order.id}\n\nItems:\n${itemsText}\n\nTotal: $${order.total.toFixed(2)}\n\nShipping to: ${order.shipping_name}, ${order.shipping_address}, ${order.shipping_city}${order.shipping_email ? `, email: ${order.shipping_email}` : ''}${order.shipping_phone ? `, phone: ${order.shipping_phone}` : ''}\n\nThank you for shopping with Nyalix Global Care!`
+  return `🛍️ *Order Confirmation*\n\nOrder ID: ${order.id}\n\nItems:\n${itemsText}\n\nTotal: $${order.total.toFixed(2)}\n\nShipping to: ${order.shipping_name}, ${order.shipping_address}, ${order.shipping_city}${order.shipping_email ? `, email: ${order.shipping_email}` : ''}${order.shipping_phone ? `, phone: ${order.shipping_phone}` : ''}\n\nThank you for shopping with Nyalix Medical PVT LTD!`
 }
 
 function generateStatusUpdateWhatsApp(profile: ProfileRecord, order: OrderRecord): string {
@@ -377,5 +379,5 @@ function generateStatusUpdateWhatsApp(profile: ProfileRecord, order: OrderRecord
     cancelled: 'Your order has been cancelled.'
   }
 
-  return `📦 *Order Status Update*\n\nOrder ID: ${order.id}\n\nStatus: ${order.status.charAt(0).toUpperCase() + order.status.slice(1)}\n\n${statusMessages[order.status as keyof typeof statusMessages] || 'Your order status has been updated.'}\n\nThank you for choosing Nyalix Global Care!`
+  return `📦 *Order Status Update*\n\nOrder ID: ${order.id}\n\nStatus: ${order.status.charAt(0).toUpperCase() + order.status.slice(1)}\n\n${statusMessages[order.status as keyof typeof statusMessages] || 'Your order status has been updated.'}\n\nThank you for choosing Nyalix Medical PVT LTD!`
 }

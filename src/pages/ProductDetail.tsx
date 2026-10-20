@@ -147,10 +147,10 @@ const ProductDetail = () => {
         <div className="container mx-auto px-4">
           <nav className="flex items-center gap-2 text-primary-foreground/60 text-sm mb-2">
             <Link to="/" className="flex items-center gap-1 hover:text-primary-foreground transition-colors">
-              <Home className="w-3.5 h-3.5" />Home
+              <Home className="w-3.5 h-3.5" />{t('products.home')}
             </Link>
             <ChevronRight className="w-3.5 h-3.5" />
-            <Link to="/products" className="hover:text-primary-foreground transition-colors">Products</Link>
+            <Link to="/products" className="hover:text-primary-foreground transition-colors">{t('nav.products')}</Link>
             <ChevronRight className="w-3.5 h-3.5" />
             <span className="text-primary-foreground font-medium">{name}</span>
           </nav>
@@ -200,8 +200,14 @@ const ProductDetail = () => {
               </div>
                 }
 
-            <div className="flex items-center gap-3 mb-6">
-              <span className="text-3xl font-bold text-foreground">${product.price.toLocaleString()}</span>
+            <div className="flex items-center gap-3 mb-6 flex-wrap">
+              {product.price !== undefined && product.price !== null ? (
+                <span className="text-3xl font-bold text-foreground">${product.price.toLocaleString()}</span>
+              ) : (
+                <button onClick={() => setShowQuoteModal(true)} className="text-2xl font-bold text-gold hover:text-gold/80 transition-colors cursor-pointer underline underline-offset-2">
+                  {t('products.contactForPrice')}
+                </button>
+              )}
               <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${product.in_stock ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                 {product.in_stock ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
                 {product.in_stock ? t('products.inStock') : t('products.outOfStock')}
@@ -260,7 +266,7 @@ const ProductDetail = () => {
         {/* Reviews Section */}
         <div className="mt-16">
           <div className="flex items-center gap-4 mb-6">
-            <h2 className="text-2xl font-display font-bold text-foreground">Customer Reviews</h2>
+            <h2 className="text-2xl font-display font-bold text-foreground">{t('products.customerReviews')}</h2>
             {reviews.length > 0 &&
                 <div className="flex items-center gap-2 bg-muted rounded-lg px-4 py-2">
                 <StarRating value={Math.round(avgRating)} readonly size="sm" />
@@ -274,7 +280,7 @@ const ProductDetail = () => {
               <p className="text-muted-foreground">Loading reviews...</p> :
               reviews.length === 0 ?
               <div className="bg-card rounded-xl border border-border p-8 text-center shadow-luxury">
-              <p className="text-muted-foreground">No reviews yet. Be the first to review this product after your delivery!</p>
+              <p className="text-muted-foreground">{t('products.noReviewsYet')}</p>
             </div> :
 
               <div className="grid gap-4">

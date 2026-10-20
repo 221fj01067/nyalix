@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { ShoppingCart, Menu, X, Globe, ChevronDown, LogIn, LogOut, Shield, UserCircle, Search } from 'lucide-react';
 import LiveSearch from './LiveSearch';
 import { useCart } from '@/contexts/CartContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import nyalixLogo from '@/assets/nyalix-logo.png';
+import nyalixLogo from '@/assets/new-logo.png';
 import ProductsDropdown from './ProductsDropdown';
 import { useCategories } from '@/hooks/useCategories';
 import TopBar from './TopBar';
@@ -21,7 +22,21 @@ const Navbar = () => {
   const [langOpen, setLangOpen] = useState(false);
   const [mobileProductsOpen, setMobileProductsOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { data: categories = [] } = useCategories();
+
+  const handleLogout = async () => {
+    if (!confirm(t('admin.settings.logoutConfirm'))) return;
+    try {
+      await signOut();
+      toast.success('Logged out successfully');
+      navigate('/');
+      setMobileOpen(false);
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast.error('Failed to logout');
+    }
+  };
 
   const navLinks = [
     { path: '/', label: t('nav.home') },
@@ -43,11 +58,13 @@ const Navbar = () => {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 md:h-20 gap-4">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 shrink-0">
-            <img src={nyalixLogo} alt="NyaliX Medical" className="w-10 h-10 rounded-full object-cover" />
-            <div className="hidden sm:block">
-              <span className="font-display font-bold text-foreground text-lg leading-none">NyaliX</span>
-              <span className="text-[10px] text-muted-foreground block mt-0.5">Medical PVT LTD</span>
+          <Link to="/" className="flex items-center gap-2.5 shrink-0">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white p-1 shadow-sm ring-1 ring-slate-100 overflow-hidden">
+              <img src={nyalixLogo} alt="Nialix International" className="h-full w-full object-cover" />
+            </div>
+            <div className="hidden sm:block leading-tight">
+              <div className="font-display font-extrabold text-foreground text-[1rem] tracking-tight">Nialix International</div>
+              <div className="text-[10px] font-semibold text-slate-700">Multi-Activities Co.LTD</div>
             </div>
           </Link>
 
@@ -218,10 +235,16 @@ const Navbar = () => {
                   }`}>{link.label}</Link>
               ))}
               {user && !isAdmin && (
-                <Link to="/profile" onClick={() => setMobileOpen(false)} className="px-4 py-2.5 rounded text-sm font-medium text-foreground/70 hover:bg-muted">My Account</Link>
+                <Link key="profile" to="/profile" onClick={() => setMobileOpen(false)} className="px-4 py-2.5 rounded text-sm font-medium text-foreground/70 hover:bg-muted">My Account</Link>
               )}
               {isAdmin && (
-                <Link to="/admin/dashboard" onClick={() => setMobileOpen(false)} className="px-4 py-2.5 rounded text-sm font-medium text-foreground/70 hover:bg-muted">Admin Dashboard</Link>
+                <Link key="admin-dashboard" to="/admin/dashboard" onClick={() => setMobileOpen(false)} className="px-4 py-2.5 rounded text-sm font-medium text-foreground/70 hover:bg-muted">Admin Dashboard</Link>
+              )}
+              {user && (
+                <button key="logout" onClick={handleLogout} className="w-full px-4 py-2.5 rounded text-sm font-medium text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-2">
+                  <LogOut className="w-4 h-4" />
+                  {t('admin.settings.logout')}
+                </button>
               )}
             </div>
           </motion.div>

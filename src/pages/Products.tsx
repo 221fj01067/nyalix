@@ -1,17 +1,21 @@
 import { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { ChevronRight, Home } from 'lucide-react';
 import { useProducts } from '@/hooks/useProducts';
 import CategorySidebar from '@/components/CategorySidebar';
+import ProductDetailModal from '@/components/ProductDetailModal';
 
 const Products = () => {
   const { language } = useLanguage();
+  const { t } = useTranslation();
   const { data: products = [], isLoading } = useProducts();
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const categoryRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
   // Build ordered unique categories
   const categoryMap = new Map<string, { en: string; ar: string; image: string }>();
@@ -62,13 +66,13 @@ const Products = () => {
           <nav className="flex items-center gap-2 text-primary-foreground/60 text-sm mb-3">
             <Link to="/" className="flex items-center gap-1 hover:text-primary-foreground transition-colors">
               <Home className="w-3.5 h-3.5" />
-              Home
+              {t('products.home')}
             </Link>
             <ChevronRight className="w-3.5 h-3.5" />
-            <span className="text-primary-foreground font-medium">Products</span>
+            <span className="text-primary-foreground font-medium">{t('nav.products')}</span>
           </nav>
           <h1 className="text-3xl md:text-4xl font-display font-bold text-primary-foreground uppercase tracking-wide">
-            Products
+            {t('nav.products')}
           </h1>
         </div>
       </div>
@@ -103,7 +107,7 @@ const Products = () => {
               </div>
             ) : Object.keys(grouped).length === 0 ? (
               <div className="text-center py-20 text-muted-foreground">
-                <p className="text-lg">No products found matching your search.</p>
+                <p className="text-lg">{t('products.noProductsFound')}</p>
               </div>
             ) : (
               <div className="space-y-6">
@@ -132,7 +136,7 @@ const Products = () => {
                             {catLabel}
                           </h2>
                           <span className="text-white/60 text-xs">
-                            {catProducts.length} product{catProducts.length !== 1 ? 's' : ''}
+                            {catProducts.length} {catProducts.length === 1 ? t('products.product') : t('products.products')}
                           </span>
                         </div>
 
@@ -143,14 +147,14 @@ const Products = () => {
                             {catProducts.map(product => {
                               const name = language === 'ar' ? product.name_ar : product.name;
                               return (
-                                <Link
+                                <button
                                   key={product.id}
-                                  to={`/products/${product.id}`}
-                                  className="flex items-start gap-1.5 text-sm text-[hsl(210_60%_40%)] hover:text-accent transition-colors group"
+                                  onClick={() => setSelectedProductId(product.id)}
+                                  className="flex items-start gap-1.5 text-sm text-[hsl(210_60%_40%)] hover:text-accent transition-colors group text-left"
                                 >
                                   <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground group-hover:text-accent" />
                                   <span className="leading-snug">{name}</span>
-                                </Link>
+                                </button>
                               );
                             })}
                           </div>
@@ -175,6 +179,13 @@ const Products = () => {
             )}
           </main>
         </div>
+
+        {/* Product Detail Modal */}
+        <ProductDetailModal
+          isOpen={!!selectedProductId}
+          onClose={() => setSelectedProductId(null)}
+          productId={selectedProductId || ''}
+        />
       </div>
     </div>
   );
